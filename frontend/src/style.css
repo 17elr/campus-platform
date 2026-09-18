@@ -46,3 +46,5 @@ input:focus,textarea:focus,select:focus{outline:2px solid #6caa98;outline-offset
 .search{flex-wrap:wrap}.search input{min-width:150px}.search select{min-width:120px}
 .admin-view,.account,.admin-table{min-width:0;max-width:100%}
 @media(max-width:600px){.portal>main{padding:20px 16px}.search input{flex-basis:100%;width:100%}.search select{flex:1;min-width:0}.home-strip>span,.home-strip p{width:100%;flex:auto}.home-guide{padding:24px}.dialog{padding:24px 18px}.home-copy{padding:28px 24px}}
+
+.promotion-badge{display:inline-block;padding:4px 8px;margin:3px 6px 6px 0;border-radius:4px;background:#fff0d5;color:#855514;font-size:12px}

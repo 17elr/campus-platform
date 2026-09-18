@@ -2,10 +2,13 @@
 import { computed, ref, onMounted, watch, onUnmounted } from "vue";
 
 import axios from "axios";
+import Pager from "./components/Pager.vue";
+import PromotionPurchase from "./components/PromotionPurchase.vue";
 import Comments from "./components/Comments.vue";
 import Home from "./components/Home.vue";
 import Admin from "./components/Admin.vue";
 import Account from "./components/Account.vue";
+import DeliveryOrders from "./components/DeliveryOrders.vue";
 // 每次打开页面先展示首页，站内导航仍使用 hash。
 const currentPage = ref('home');
 window.history.replaceState(null, '', window.location.pathname + window.location.search + '#home');
@@ -19,6 +22,7 @@ function browse(value = "") {
   type.value = value;
   keyword.value = "";
   location.value = "";
+  category.value = "";
   navigate("hall");
 }
 window.addEventListener("hashchange", () => {
@@ -27,7 +31,7 @@ window.addEventListener("hashchange", () => {
       ? "hall"
       : window.location.hash === "#admin"
         ? "admin"
-        : window.location.hash === "#account" ? "account" : "home";
+        : window.location.hash === "#account" ? "account" : window.location.hash === "#delivery" ? "delivery" : "home";
 });
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8080/api",
@@ -118,78 +122,10 @@ const types = [
   ["FOUND", "失物招领"],
   ["SECOND_HAND", "二手闲置"],
 ];
-const seed = [
-  [
-    "FOUND",
-    "在图书馆拾到校园卡",
-    "蓝色校园卡，姓名李同学，请带学生证认领",
-    "图书馆",
-    "证件",
-  ],
-  [
-    "LOST",
-    "寻找蓝色保温杯",
-    "周五下午遗落，杯身有白色贴纸",
-    "教学楼",
-    "生活用品",
-  ],
-  [
-    "SECOND_HAND",
-    "转让考研英语资料",
-    "全新未使用，校内当面交易",
-    "学生宿舍",
-    "书籍",
-  ],
-  [
-    "FOUND",
-    "操场捡到黑色耳机",
-    "充电盒有划痕，请描述品牌后认领",
-    "操场",
-    "电子产品",
-  ],
-  ["LOST", "求助寻找宿舍钥匙", "三把钥匙串在蓝色挂件上", "学生宿舍", "钥匙"],
-  [
-    "SECOND_HAND",
-    "九成新台灯转让",
-    "光线柔和，支持三档调节",
-    "二号食堂",
-    "生活用品",
-  ],
-  ["FOUND", "食堂拾到雨伞", "透明长柄雨伞，放在服务台", "一号食堂", "生活用品"],
-  ["LOST", "寻找白色帆布包", "内有课程笔记和水杯", "图书馆", "箱包"],
-  [
-    "SECOND_HAND",
-    "闲置绘图板低价出",
-    "适合设计专业同学，功能正常",
-    "实训楼",
-    "电子产品",
-  ],
-  ["FOUND", "教学楼拾到学生证", "请联系失物招领处", "教学楼", "证件"],
-  ["LOST", "寻找银色项链", "昨晚在操场附近掉落", "操场", "饰品"],
-  [
-    "SECOND_HAND",
-    "转让专业课教材",
-    "多本教材一起出，保存良好",
-    "学生宿舍",
-    "书籍",
-  ],
-];
-const demo = ref(
-  seed.map((x, i) => ({
-    id: i + 1,
-    type: x[0],
-    title: x[1],
-    description: x[2],
-    location: x[3],
-    category: x[4],
-    createdAt: `2026-09-${String(12 - (i % 5)).padStart(2, "0")}`,
-    favoriteCount: 3 + i * 2,
-  })),
-);
+const demo = ref([]);
 const keyword = ref(""),
   type = ref(""),
   location = ref(""),
-  sort = ref("最新发布"),
   selected = ref(null),
   favorites = ref([]),
   notice = ref(""),
@@ -210,40 +146,22 @@ const announcements = [
   "二手交易建议选择公共区域",
   "请勿发布虚假或违规信息",
 ];
-const hallPage = ref(1), hallSize = 12;
-const filtered = computed(() =>
-  demo.value
-    .filter(
-      (x) =>
-        (!type.value || x.type === type.value) &&
-        (!location.value || x.location === location.value) &&
-        (x.title + x.description + x.category).includes(keyword.value.trim()),
-    )
-    .sort((a, b) =>
-      sort.value === "最多收藏"
-        ? b.favoriteCount - a.favoriteCount
-        : b.id - a.id,
-    ),
-);
-const itemCounts = ref({});
-  const pagedFiltered = computed(() => filtered.value.slice((hallPage.value-1)*hallSize, hallPage.value*hallSize));
-const itemsReady = ref(false),
-  itemsError = ref("");
-async function loadItems() {
-  try {
-    const data = await request("/items?page=1&size=50", undefined, "get");
-    itemCounts.value = data.counts || {};
-    demo.value = (data.records || data).map((x) => ({
-      ...x,
-      favoriteCount: x.favoriteCount || 0,
-    }));
-    itemsReady.value = true;
-    itemsError.value = "";
-  } catch {
-    itemsReady.value = false;
-    itemsError.value = "暂未连接物品服务，当前显示演示内容；演示物品不能留言。";
-  }
+const hallPage=ref(1),hallSize=ref(12),hallTotal=ref(0),category=ref(''),homeItems=ref([]);
+const itemCounts=ref({}),itemsReady=ref(false),itemsError=ref(''),itemsLoading=ref(false);
+const pagedFiltered=computed(()=>demo.value);
+let listSequence=0;
+async function loadItems(){
+ const seq=++listSequence;itemsLoading.value=true;
+ try{
+ const params=new URLSearchParams({page:hallPage.value,size:hallSize.value,keyword:keyword.value,type:type.value,location:location.value,category:category.value});
+ const [data,home]=await Promise.all([request('/items?'+params,undefined,'get'),request('/items?scene=home&page=1&size=12',undefined,'get')]);
+ if(seq!==listSequence)return;
+ demo.value=data.records.map(x=>({...x,favoriteCount:0}));hallTotal.value=data.total;itemCounts.value=data.counts;homeItems.value=home.records;itemsReady.value=true;itemsError.value='';
+ }catch(e){if(seq!==listSequence)return;demo.value=[];homeItems.value=[];hallTotal.value=0;itemsReady.value=false;itemsError.value='信息加载失败，请重试。'}finally{if(seq===listSequence)itemsLoading.value=false;}
 }
+watch([keyword,type,location,category,hallSize],()=>{if(hallPage.value===1)loadItems();else hallPage.value=1;});
+watch(hallPage,loadItems);
+function promotionLabel(type){return {TOP_24H:'推广 · 置顶',FEATURED_3D:'推广 · 首页推荐',CATEGORY_7D:'推广 · 分类置顶'}[type]||type;}
 onMounted(loadItems);
 function favorite(x) {
   if (!user.value) {
@@ -342,6 +260,7 @@ async function publishItem() {
     showPublish.value = false;
     publishForm.value = emptyItem();
     notice.value = "发布成功，信息已公开展示";
+    await loadItems();
   } catch (e) {
     publishError.value =
       e.response?.data?.message || e.message || "发布失败，请重试";
@@ -369,7 +288,7 @@ async function publishItem() {
         <em v-if="t[0]">{{ itemCounts[t[0]] ?? demo.filter((x) => x.type === t[0]).length }}</em>
       </button>
       <p v-if="user" class="caption nav-divider">我的空间</p>
-      <button v-if="user" :class="{active:currentPage==='account'}" @click="navigate('account')">个人中心</button>
+      <button v-if="user" :class="{active:currentPage==='account'}" @click="navigate('account')">个人中心</button><button :class="{active:currentPage==='delivery'}" @click="navigate('delivery')">校园配送</button>
       <button v-if="user?.role==='ADMIN'" :class="{active:currentPage==='admin'}" @click="navigate('admin')">管理员后台</button>
       <div class="notice-box">
         <strong>校园公告</strong>
@@ -408,9 +327,11 @@ async function publishItem() {
           <span class="crumb"
             >校园生活 /
             {{
-              currentPage === "admin"
+              user?.role === "ADMIN" && currentPage === "home"
+                ? "管理员运营总览"
+                : currentPage === "admin"
                 ? "管理员后台"
-                : currentPage === "home"
+                : currentPage === "account" ? "个人中心" : currentPage === "home"
                   ? "首页"
                   : "信息大厅"
             }}</span
@@ -419,7 +340,7 @@ async function publishItem() {
             {{
               currentPage === "admin"
                 ? "平台管理"
-                : currentPage === "home"
+                : currentPage === "account" ? "个人中心" : currentPage === "home"
                   ? "欢迎来到校园互助"
                   : "校园互助信息大厅"
             }}
@@ -446,7 +367,7 @@ async function publishItem() {
           </button>
         </div>
       </header>
-      <section v-if="currentPage === 'account'"><Account v-if="user" :key="user.id" :user="user" :request="request" @changed="loadItems"/><p v-else>请先登录后查看个人中心。</p></section>
+      <section v-if="currentPage === 'delivery'"><DeliveryOrders :request="request" public-view/></section><section v-else-if="currentPage === 'account'"><Account v-if="user" :key="user.id" :user="user" :request="request" @changed="loadItems"/><p v-else>请先登录后查看个人中心。</p></section>
 <section v-else-if="currentPage === 'admin'">
         <Admin
           v-if="user?.role === 'ADMIN'"
@@ -455,9 +376,14 @@ async function publishItem() {
         />
         <p v-else>请使用管理员账号登录。</p>
       </section>
+      <Admin
+        v-else-if="currentPage === 'home' && user?.role === 'ADMIN'"
+        :request="request"
+        :overview="true"
+      />
       <Home
         v-else-if="currentPage === 'home'"
-        :items="demo"
+        :items="homeItems"
         :ready="itemsReady"
         :error="itemsError"
         @browse="browse"
@@ -477,12 +403,7 @@ async function publishItem() {
             ><b>真实发布<br />友好沟通<br />当面核实</b>
           </div>
         </section>
-        <div class="stats">
-          <div><small>今日新增</small><b>28</b><span>较昨日 +12%</span></div>
-          <div><small>待认领</small><b>16</b><span>正在寻找主人</span></div>
-          <div><small>已解决</small><b>132</b><span>本月累计</span></div>
-          <div><small>二手闲置</small><b>46</b><span>等待新主人</span></div>
-        </div>
+        <div class="stats"><div v-for="t in types.filter(t=>t[0])" :key="t[0]"><small>{{t[1]}}</small><b>{{itemCounts[t[0]] ?? '—'}}</b><span>当前公开信息</span></div></div>
         <div class="search">
           <input
             v-model="keyword"
@@ -495,17 +416,14 @@ async function publishItem() {
             >
               {{ x }}
             </option></select
-          ><select v-model="sort">
-            <option>最新发布</option>
-            <option>最多收藏</option></select
-          ><button class="primary">搜索</button>
+          ><input v-model="category" placeholder="物品类别，如电子产品" aria-label="物品类别筛选"/><button class="primary" @click="loadItems">搜索</button>
         </div>
         <div class="section-title">
           <div>
             <h2>{{ types.find((x) => x[0] === type)?.[1] || "全部信息" }}</h2>
             <p>发现校园里正在发生的互助</p>
           </div>
-          <span>{{ filtered.length }} 条信息</span>
+          <span>{{ hallTotal }} 条信息</span>
         </div>
         <p v-if="itemsError" role="alert">
           {{ itemsError }} <button @click="loadItems">重新连接</button>
@@ -524,7 +442,7 @@ async function publishItem() {
               :src="imageSrc(x.imageUrl)"
               :alt="x.title"
             />
-            <h3>{{ x.title }}</h3>
+            <h3>{{ x.title }}</h3><span v-for="p in x.promotions" :key="p" class="promotion-badge">{{promotionLabel(p)}}</span>
             <p>{{ x.description }}</p>
             <div class="card-meta">⌖ {{ x.location }} · {{ x.category }}</div>
             <div class="card-actions">
@@ -534,7 +452,7 @@ async function publishItem() {
               </button>
             </div>
           </article>
-        </div><div v-if="filtered.length > hallSize" class="hall-pager"><button :disabled="hallPage===1" @click="hallPage--">上一页</button><span>第 {{hallPage}} / {{Math.ceil(filtered.length / hallSize)}} 页</span><button :disabled="hallPage>=Math.ceil(filtered.length / hallSize)" @click="hallPage++">下一页</button></div></template
+        </div><p v-if="!itemsLoading&&!demo.length&&!itemsError">暂无匹配信息。</p><Pager v-model:page="hallPage" v-model:size="hallSize" :total="hallTotal" :busy="itemsLoading"/></template
       >
     </main>
     <aside v-if="currentPage === 'hall'" class="right">
@@ -543,9 +461,9 @@ async function publishItem() {
           <h3>今日平台</h3>
           <span>实时更新</span>
         </div>
-        <div class="big-number">132<small>条公开信息</small></div>
+        <div class="big-number">{{Object.values(itemCounts).reduce((a,b)=>a+b,0)}}<small>条公开信息</small></div>
         <div class="progress"><i></i></div>
-        <p>本周互助成功率 <b>86%</b></p>
+        <p>数据来自当前公开信息</p>
       </div>
       <div class="right-card">
         <h3>最新公告</h3>
@@ -556,7 +474,7 @@ async function publishItem() {
         </ul>
       </div>
       <div class="right-card">
-        <h3>热门地点</h3>
+        <h3>按地点浏览</h3>
         <div
           class="place"
           v-for="(p, i) in ['图书馆', '教学楼', '学生宿舍', '操场']"
@@ -564,7 +482,7 @@ async function publishItem() {
         >
           <span>{{ i + 1 }}</span
           ><b>{{ p }}</b
-          ><em>{{ 18 - i * 3 }} 条</em>
+          ><button @click="browse(); location=p">查看</button>
         </div>
       </div>
       <div class="right-card rules">
@@ -604,6 +522,7 @@ async function publishItem() {
           立即购买
         </button>
         <p v-if="itemsReady">联系方式：{{ selected.contact || "未填写" }}</p>
+        <PromotionPurchase v-if="user?.id===selected.userId && selected.type==='SECOND_HAND' && selected.status==='APPROVED'" :key="selected.id" :item="selected" :request="request" @changed="loadItems"/>
         <Comments
           v-if="itemsReady"
           :key="selected.id"
