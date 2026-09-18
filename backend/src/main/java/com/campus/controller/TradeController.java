@@ -1,0 +1,13 @@
+package com.campus.controller;
+import com.campus.common.Result; import com.campus.dto.OrderDTO; import com.campus.entity.*; import com.campus.mapper.*; import com.campus.security.Tokens; import jakarta.validation.Valid; import org.springframework.web.bind.annotation.*; import java.math.BigDecimal; import java.time.LocalDateTime; import java.util.*;
+@RestController @RequestMapping("/api/trade") public class TradeController { private final TradeOrderMapper orders; private final ItemMapper items; private final UserMapper users; private final Tokens tokens; public TradeController(TradeOrderMapper o,ItemMapper i,UserMapper u,Tokens t){orders=o;items=i;users=u;tokens=t;}
+ private User me(String h){if(h==null||!h.startsWith("Bearer "))throw new IllegalArgumentException("请先登录");return users.selectById(tokens.verify(h.substring(7)));}
+ @PostMapping("/orders") public Result<?> create(@Valid @RequestBody OrderDTO q,@RequestHeader("Authorization") String h){User buyer=me(h);Item p=items.selectById(q.productId());if(p==null||!"SECOND_HAND".equals(p.getType()))return Result.fail("商品不存在");BigDecimal fee=q.amount().multiply(new BigDecimal("0.03")).setScale(2,BigDecimal.ROUND_HALF_UP);TradeOrder o=new TradeOrder();o.setOrderNo("CAMPUS"+System.currentTimeMillis());o.setProductId(p.getId());o.setBuyerId(buyer.getId());o.setSellerId(p.getUserId());o.setAmount(q.amount());o.setCommission(fee);o.setSellerAmount(q.amount().subtract(fee));o.setPaymentMethod(q.paymentMethod());o.setStatus("PENDING_PAYMENT");o.setCreatedAt(LocalDateTime.now());orders.insert(o);return Result.ok(o);}
+ @PostMapping("/orders/{id}/pay") public Result<?> pay(@PathVariable Long id,@RequestHeader("Authorization") String h){User u=me(h);TradeOrder o=orders.selectById(id);if(o==null||!u.getId().equals(o.getBuyerId()))return Result.fail("订单不存在");o.setStatus("PAID");o.setPaidAt(LocalDateTime.now());orders.updateById(o);return Result.ok(o);}
+ @GetMapping("/orders") public Result<?> list(@RequestParam(defaultValue="1") int page,@RequestParam(defaultValue="10") int size,@RequestHeader("Authorization") String h){User u=me(h);var w=new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<TradeOrder>().and(x->x.eq("buyer_id",u.getId()).or().eq("seller_id",u.getId())).orderByDesc("created_at"); long total=orders.selectCount(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<TradeOrder>().eq("buyer_id",u.getId()).or(x->x.eq("seller_id",u.getId()))); w.last("LIMIT "+Math.min(size,50)+" OFFSET "+Math.max(0,(page-1)*size)); return Result.ok(Map.of("records",orders.selectList(w),"total",total,"page",page,"size",size));}
+}
+
+
+
+
+

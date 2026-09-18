@@ -1,0 +1,1 @@
+package com.campus.mapper; import org.apache.ibatis.annotations.Mapper; import com.baomidou.mybatisplus.core.mapper.BaseMapper; import com.campus.entity.TradeOrder; @Mapper public interface TradeOrderMapper extends BaseMapper<TradeOrder>{}
