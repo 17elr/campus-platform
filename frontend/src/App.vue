@@ -367,7 +367,7 @@ async function publishItem() {
           </button>
         </div>
       </header>
-      <section v-if="currentPage === 'delivery'"><DeliveryOrders :request="request" public-view/></section><section v-else-if="currentPage === 'account'"><Account v-if="user" :key="user.id" :user="user" :request="request" @changed="loadItems"/><p v-else>请先登录后查看个人中心。</p></section>
+      <section v-if="currentPage === 'delivery'"><DeliveryOrders :request="request" :public-view="!user"/></section><section v-else-if="currentPage === 'account'"><Account v-if="user" :key="user.id" :user="user" :request="request" @changed="loadItems"/><p v-else>请先登录后查看个人中心。</p></section>
 <section v-else-if="currentPage === 'admin'">
         <Admin
           v-if="user?.role === 'ADMIN'"

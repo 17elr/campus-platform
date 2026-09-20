@@ -1,10 +1,12 @@
 package com.campus.controller;
 import com.campus.common.Result;import com.campus.security.Tokens;import com.campus.mapper.UserMapper;import com.campus.service.DeliveryService;import org.springframework.web.bind.annotation.*;import java.util.*;
 @RestController @RequestMapping("/api/delivery") public class DeliveryController{final DeliveryService s;final Tokens t;final UserMapper users;DeliveryController(DeliveryService s,Tokens t,UserMapper u){this.s=s;this.t=t;users=u;}long me(String h){if(h==null||!h.startsWith("Bearer "))throw new IllegalArgumentException("请先登录");return t.verify(h.substring(7));}void admin(String h){var u=users.selectById(me(h));if(u==null||!"ADMIN".equals(u.getRole()))throw new IllegalArgumentException("无管理员权限");}
- record Create(Long tradeOrderId,String deliveryType,String pickupLocation,String deliveryLocation){}
- @PostMapping public Result<?> create(@RequestHeader("Authorization")String h,@RequestBody Create q){return Result.ok(s.create(me(h),q.tradeOrderId(),q.deliveryType(),q.pickupLocation(),q.deliveryLocation()));}
+ record Create(Long tradeOrderId,String deliveryType,String pickupLocation,String deliveryLocation,String requesterNote){}
+ @PostMapping public Result<?> create(@RequestHeader("Authorization")String h,@RequestBody Create q){return Result.ok(s.create(me(h),q.tradeOrderId(),q.deliveryType(),q.pickupLocation(),q.deliveryLocation(),q.requesterNote()));}
  @GetMapping("/public") public Result<?> publicList(@RequestParam(defaultValue="1")int page,@RequestParam(defaultValue="10")int size,@RequestParam(required=false)String type){return Result.ok(s.adminList(page,size,type));}
  @GetMapping public Result<?> list(@RequestHeader("Authorization")String h,@RequestParam(defaultValue="1")int page,@RequestParam(defaultValue="10")int size){return Result.ok(s.list(me(h),page,size));}
+ @GetMapping("/available") public Result<?> available(@RequestHeader("Authorization")String h,@RequestParam(defaultValue="1")int page,@RequestParam(defaultValue="10")int size){me(h);return Result.ok(s.adminList(page,size,"WAITING"));}
+ @PostMapping("/{id}/claim") public Result<?> claim(@RequestHeader("Authorization")String h,@PathVariable long id){return Result.ok(s.claim(me(h),id));}
  @PutMapping("/{id}/status") public Result<?> status(@RequestHeader("Authorization")String h,@PathVariable long id,@RequestBody Map<String,String> q){return Result.ok(s.transition(me(h),id,q.get("status")));}
  @GetMapping("/admin/orders") public Result<?> all(@RequestHeader("Authorization")String h,@RequestParam(defaultValue="1")int page,@RequestParam(defaultValue="10")int size,@RequestParam(required=false)String type){admin(h);return Result.ok(s.adminList(page,size,type));}
  @GetMapping("/admin/stats") public Result<?> stats(@RequestHeader("Authorization")String h){admin(h);return Result.ok(s.stats());}}

@@ -8,3 +8,4 @@ backend/target/
 !.env.example
 .idea/
 .vscode/
+/campus-platform-*-source.zip
