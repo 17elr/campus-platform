@@ -1,2 +1,21 @@
-package com.campus.controller; import com.campus.common.Result; import org.springframework.web.bind.annotation.*; import java.util.*;
-@RestController @RequestMapping("/api/notices") public class NoticeController { @GetMapping public Result<?> list(){return Result.ok(List.of(Map.of("title","失物认领请携带有效证件","date","今天"),Map.of("title","二手交易建议选择公共区域","date","今天"),Map.of("title","请勿发布虚假或违规信息","date","今天")));} }
+package com.campus.controller;
+
+import com.campus.client.NoticeServiceClient;
+import com.campus.common.Result;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import java.util.List;
+import java.util.Map;
+
+@RestController @RequestMapping("/api/notices")
+public class NoticeController {
+ private final NoticeServiceClient notices;
+ public NoticeController(NoticeServiceClient notices) { this.notices = notices; }
+ @GetMapping @Cacheable("notices")
+ public Result<?> list() {
+  Map<String,Object> response = notices.list();
+  return Result.ok(response.getOrDefault("data", List.of()));
+ }
+}

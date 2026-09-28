@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS delivery_courier_application (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT,
+ user_id BIGINT NOT NULL UNIQUE,
+ campus_id VARCHAR(40) NOT NULL,
+ note VARCHAR(500) NULL,
+ status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+ review_note VARCHAR(500) NULL,
+ reviewed_by BIGINT NULL,
+ reviewed_at DATETIME NULL,
+ created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+ INDEX idx_courier_application_status(status,created_at)
+);
+
+ALTER TABLE delivery_order
+ ADD COLUMN dispute_reason VARCHAR(500) NULL,
+ ADD COLUMN dispute_by BIGINT NULL,
+ ADD COLUMN dispute_from_status VARCHAR(20) NULL,
+ ADD COLUMN resolution_note VARCHAR(500) NULL,
+ ADD COLUMN resolved_at DATETIME NULL;

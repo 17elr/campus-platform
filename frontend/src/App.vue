@@ -141,11 +141,17 @@ const locations = [
   "实训楼",
 ];
 const tags = ["校园卡", "耳机", "教材", "钥匙", "保温杯", "帆布包"];
-const announcements = [
+const announcements = ref([
   "失物认领请携带有效证件",
   "二手交易建议选择公共区域",
   "请勿发布虚假或违规信息",
-];
+]);
+onMounted(async () => {
+  try {
+    const rows = await request('/notices', undefined, 'get')
+    announcements.value = rows.map(row => row.title)
+  } catch { /* Keep the bundled notices when the notice service is unavailable. */ }
+})
 const hallPage=ref(1),hallSize=ref(12),hallTotal=ref(0),category=ref(''),homeItems=ref([]);
 const itemCounts=ref({}),itemsReady=ref(false),itemsError=ref(''),itemsLoading=ref(false);
 const pagedFiltered=computed(()=>demo.value);
@@ -367,7 +373,7 @@ async function publishItem() {
           </button>
         </div>
       </header>
-      <section v-if="currentPage === 'delivery'"><DeliveryOrders :request="request" :public-view="!user"/></section><section v-else-if="currentPage === 'account'"><Account v-if="user" :key="user.id" :user="user" :request="request" @changed="loadItems"/><p v-else>请先登录后查看个人中心。</p></section>
+      <section v-if="currentPage === 'delivery'"><DeliveryOrders :request="request" :public-view="!user" :user-id="user?.id"/></section><section v-else-if="currentPage === 'account'"><Account v-if="user" :key="user.id" :user="user" :request="request" @changed="loadItems"/><p v-else>请先登录后查看个人中心。</p></section>
 <section v-else-if="currentPage === 'admin'">
         <Admin
           v-if="user?.role === 'ADMIN'"

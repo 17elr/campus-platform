@@ -9,3 +9,6 @@ backend/target/
 .idea/
 .vscode/
 /campus-platform-*-source.zip
+
+notice-service/target/
+**/uploads/

@@ -1,11 +1,173 @@
 <script setup>
-import {ref,onMounted,watch,computed} from 'vue';import Pager from './Pager.vue';
-const p=defineProps({request:Function,admin:Boolean,publicView:Boolean});const rows=ref([]),page=ref(1),size=ref(10),total=ref(0),error=ref(''),busy=ref(false),selectedType=ref('');
-const courierMode=ref(false),available=ref([]),showCreate=ref(false),tradeOrders=ref([]),form=ref({tradeOrderId:"",deliveryType:"EXPRESS",pickupLocation:"",deliveryLocation:""}),saving=ref(false);const types={EXPRESS:{name:'快递代拿',icon:'▣',desc:'代取驿站包裹，送到宿舍楼下',color:'orange'},ERRAND:{name:'校园跑腿',icon:'↗',desc:'代买、代送、代办校园小事',color:'blue'},FOOD:{name:'小吃街外卖',icon:'♨',desc:'小吃街美食，及时送到手边',color:'green'}};const names={WAITING:'待接单',ACCEPTED:'已接单',PICKED_UP:'已取件',DELIVERING:'配送中',COMPLETED:'已完成',CANCELLED:'已取消'};
-const activeCount=computed(()=>rows.value.filter(x=>['WAITING','ACCEPTED','PICKED_UP','DELIVERING'].includes(x.status)).length);const completedCount=computed(()=>rows.value.filter(x=>x.status==='COMPLETED').length);
-async function loadAvailable(){if(p.admin||p.publicView)return;try{const d=await p.request(`/delivery/available?page=1&size=20`,undefined,'get');available.value=d.records||[]}catch(e){error.value=e.message}}async function loadTrades(){if(p.admin||p.publicView)return;try{const d=await p.request("/trade/orders?role=all&page=1&size=50",undefined,"get");tradeOrders.value=(d.records||[]).filter(x=>x.status==="PAID")}catch(e){error.value=e.message}}async function create(){if(!form.value.pickupLocation||!form.value.deliveryLocation){error.value="请完整填写配送信息";return}saving.value=true;try{await p.request("/delivery",form.value);showCreate.value=false;await load()}catch(e){error.value=e.message}finally{saving.value=false}}async function load(){busy.value=true;error.value='';try{const q=selectedType.value?`&type=${selectedType.value}`:'';const url=p.admin?`/delivery/admin/orders?page=${page.value}&size=${size.value}${q}`:p.publicView?`/delivery/public?page=${page.value}&size=${size.value}`:`/delivery?page=${page.value}&size=${size.value}`;const d=await p.request(url,undefined,'get');rows.value=d.records||[];total.value=d.total||0}catch(e){error.value=e.message}finally{busy.value=false}}async function claim(x){try{await p.request(`/delivery/${x.id}/claim`,undefined,'post');courierMode.value=false;await load()}catch(e){error.value=e.message}}async function change(x,status){try{await p.request(`/delivery/${x.id}/status`,{status},'put');load()}catch(e){error.value=e.message}}watch([page,size],load);onMounted(load)
+import { onMounted, ref, watch } from 'vue'
+import Pager from './Pager.vue'
+
+const props = defineProps({ request: Function, publicView: Boolean, admin: Boolean, userId: Number })
+const types = [{ key: '', label: '全部' }, { key: 'EXPRESS', label: '快递代拿' }, { key: 'ERRAND', label: '校园跑腿' }, { key: 'FOOD', label: '小吃街外卖' }]
+const typeName = value => types.find(item => item.key === value)?.label || value
+const statusName = value => ({ WAITING: '等待接单', ACCEPTED: '已接单', PICKED_UP: '已取件', DELIVERING: '配送中', COMPLETED: '已完成', CANCELLED: '已取消', DISPUTED: '异常处理中' }[value] || value)
+const selectedType = ref('')
+const view = ref(props.admin ? 'orders' : 'orders')
+const page = ref(1)
+const size = ref(10)
+const total = ref(0)
+const records = ref([])
+const loading = ref(false)
+const busy = ref(false)
+const error = ref('')
+const notice = ref('')
+const showForm = ref(false)
+const form = ref({ deliveryType: 'EXPRESS', pickupLocation: '', deliveryLocation: '', requesterNote: '' })
+const courier = ref({ status: 'NONE' })
+const application = ref({ campusId: '', note: '' })
+const showApplication = ref(false)
+const normalize = row => ({
+  id: row.id, deliveryType: row.delivery_type ?? row.deliveryType, status: row.status,
+  pickupLocation: row.pickup_location ?? row.pickupLocation,
+  deliveryLocation: row.delivery_location ?? row.deliveryLocation,
+  requesterNote: row.requester_note ?? row.requesterNote,
+  senderId: row.sender_id ?? row.senderId, receiverId: row.receiver_id ?? row.receiverId,
+  courierId: row.courier_id ?? row.courierId, fee: row.fee,
+  deliveryNo: row.delivery_no ?? row.deliveryNo,
+  disputeReason: row.dispute_reason ?? row.disputeReason,
+  resolutionNote: row.resolution_note ?? row.resolutionNote,
+  createdAt: row.created_at ?? row.createdAt,
+})
+const query = () => {
+  if (props.admin) return `/delivery/admin/orders?page=${page.value}&size=${size.value}${selectedType.value ? `&type=${selectedType.value}` : ''}`
+  if (props.publicView) return `/delivery/public?page=${page.value}&size=${size.value}${selectedType.value ? `&type=${selectedType.value}` : ''}`
+  if (view.value === 'available') return `/delivery/available?page=${page.value}&size=${size.value}${selectedType.value ? `&type=${selectedType.value}` : ''}`
+  return `/delivery?page=${page.value}&size=${size.value}`
+}
+let sequence = 0
+async function load() {
+  const current = ++sequence
+  loading.value = true
+  error.value = ''
+  try {
+    const result = await props.request(query(), undefined, 'get')
+    if (current !== sequence) return
+    records.value = (result.records || []).map(normalize)
+    total.value = Number(result.total || 0)
+  } catch (e) {
+    if (current === sequence) error.value = e.response?.data?.message || e.message
+  } finally {
+    if (current === sequence) loading.value = false
+  }
+}
+function switchView(next) {
+  if (next === 'available' && courier.value.status !== 'APPROVED') { showApplication.value = true; return }
+  view.value = next; page.value = 1; load()
+}
+function switchType(next) { selectedType.value = next; page.value = 1; load() }
+async function loadCourier() {
+  if (props.admin || props.publicView) return
+  try { courier.value = await props.request('/delivery/courier/me', undefined, 'get') }
+  catch (e) { error.value = e.response?.data?.message || e.message }
+}
+async function applyCourier() {
+  busy.value = true; error.value = ''; notice.value = ''
+  try {
+    courier.value = await props.request('/delivery/courier/applications', application.value, 'post')
+    notice.value = '申请已提交，等待管理员审核。'
+    showApplication.value = false
+  } catch (e) { error.value = e.response?.data?.message || e.message }
+  finally { busy.value = false }
+}
+async function create() {
+  busy.value = true; error.value = ''; notice.value = ''
+  try {
+    await props.request('/delivery', { ...form.value, tradeOrderId: null }, 'post')
+    notice.value = '配送需求已发布，等待接单。'
+    form.value = { deliveryType: 'EXPRESS', pickupLocation: '', deliveryLocation: '', requesterNote: '' }
+    showForm.value = false
+    view.value = 'orders'; page.value = 1
+    await load()
+  } catch (e) { error.value = e.response?.data?.message || e.message }
+  finally { busy.value = false }
+}
+async function change(order, next) {
+  busy.value = true; error.value = ''; notice.value = ''
+  try {
+    if (next === 'ACCEPTED') await props.request(`/delivery/${order.id}/claim`, undefined, 'post')
+    else await props.request(`/delivery/${order.id}/status`, { status: next }, 'put')
+    notice.value = next === 'ACCEPTED' ? '接单成功。' : `订单已更新为${statusName(next)}。`
+    await load()
+  } catch (e) { error.value = e.response?.data?.message || e.message }
+  finally { busy.value = false }
+}
+async function dispute(order) {
+  const reason = window.prompt('请描述配送异常，管理员将据此处理：')
+  if (reason === null) return
+  busy.value = true; error.value = ''; notice.value = ''
+  try {
+    await props.request(`/delivery/${order.id}/dispute`, { reason: reason.trim() }, 'post')
+    notice.value = '异常已提交，等待管理员处理。'
+    await load()
+  } catch (e) { error.value = e.response?.data?.message || e.message }
+  finally { busy.value = false }
+}
+async function resolve(order, action) {
+  const note = window.prompt(action === 'CANCEL' ? '填写取消配送的处理说明：' : '填写恢复配送的处理说明：')
+  if (note === null) return
+  busy.value = true; error.value = ''; notice.value = ''
+  try {
+    await props.request(`/delivery/admin/orders/${order.id}/dispute`, { action, note: note.trim() }, 'put')
+    notice.value = '异常订单已处理。'
+    await load()
+  } catch (e) { error.value = e.response?.data?.message || e.message }
+  finally { busy.value = false }
+}
+function actions(order) {
+  if (props.publicView || props.admin) return []
+  if (view.value === 'available') return [{ label: '接单', next: 'ACCEPTED' }]
+  if (Number(order.receiverId) === Number(props.userId)) {
+    if (order.status === 'WAITING') return [{ label: '取消需求', next: 'CANCELLED' }]
+    if (order.status === 'DELIVERING') return [{ label: '确认送达', next: 'COMPLETED' }]
+  }
+  if (Number(order.courierId) === Number(props.userId)) {
+    if (order.status === 'ACCEPTED') return [{ label: '确认取件', next: 'PICKED_UP' }]
+    if (order.status === 'PICKED_UP') return [{ label: '开始配送', next: 'DELIVERING' }]
+  }
+  return []
+}
+watch([page, size], load)
+onMounted(() => { load(); loadCourier() })
 </script>
-<template><section class="delivery-page"><div class="delivery-hero"><div><span class="eyebrow">CAMPUS DELIVERY / 校园配送</span><h2>把校园里的每一程<br><em>送到你身边。</em></h2><p>快递代拿、校园跑腿、小吃街外卖，一站式校园生活服务。</p></div><div class="hero-route"><span>取件点</span><b>→</b><span>你的身边</span></div></div><div class="service-grid"><button v-for="(v,k) in types" :key="k" :class="['service-card',v.color,{active:selectedType===k}]" @click="selectedType=selectedType===k?'':k;page=1;load()"><div class="service-art" :class="v.color"><span v-if="k==='EXPRESS'">▣</span><span v-else-if="k==='ERRAND'">⌁</span><span v-else>♨</span><i></i></div><div><small class="service-index">0{{Object.keys(types).indexOf(k)+1}}</small><b>{{v.name}}</b><small>{{v.desc}}</small></div><span>›</span></button></div><div v-if="!admin&&!publicView" class="delivery-create-bar"><button @click="courierMode=!courierMode;loadAvailable()">{{courierMode?"返回我的订单":"进入接单大厅"}}</button><b>需要配送？</b><span>选择已支付交易订单后发起配送</span><button class="primary" @click="showCreate=true;loadTrades()">＋ 发起配送</button></div><div v-if="showCreate" class="create-panel"><h3>发起校园配送</h3><select v-model="form.tradeOrderId"><option value="">独立配送（无需交易订单）</option><option v-for="o in tradeOrders" :value="o.id">{{o.orderNo}} · ¥{{o.amount}}</option></select><select v-model="form.deliveryType"><option value="EXPRESS">快递代拿</option><option value="ERRAND">校园跑腿</option><option value="FOOD">小吃街外卖</option></select><input v-model="form.pickupLocation" placeholder="取货地点"><input v-model="form.deliveryLocation" placeholder="送达地点"><input v-model="form.requesterNote" placeholder="备注（可选）"><button @click="showCreate=false">取消</button><button class="primary" @click="create">创建配送订单</button></div><div v-if="courierMode" class="available-panel"><h3>待接单配送</h3><article v-for="x in available" :key="x.id"><b>{{types[x.deliveryType]?.name||"校园配送"}}</b><p>{{x.pickupLocation}} → {{x.deliveryLocation}}</p><button class="primary" @click="claim(x)">立即接单</button></article><p v-if="!available.length">暂无待接单配送。</p></div><div v-else class="delivery-toolbar"><div><h3>{{admin?'配送订单管理':publicView?'公开配送动态':'我的配送订单'}}</h3><p>当前平台配送服务</p></div><div class="stats"><span><b>{{total}}</b>全部订单</span><span><b>{{activeCount}}</b>进行中</span><span><b>{{completedCount}}</b>已完成</span></div></div><div class="filter-row"><button :class="{active:!selectedType}" @click="selectedType='';page=1;load()">全部</button><button v-for="(v,k) in types" :key="k" :class="{active:selectedType===k}" @click="selectedType=k;page=1;load()">{{v.name}}</button></div><p v-if="error" class="error" role="alert">{{error}}</p><div v-if="!courierMode" class="delivery-list"><article v-for="x in rows" :key="x.id" class="delivery-card"><div class="card-top"><span :class="['type-pill',types[x.deliveryType]?.color]">{{types[x.deliveryType]?.name||'校园配送'}}</span><b>{{names[x.status]||x.status}}</b></div><h4>{{x.pickupLocation}} <span>→</span> {{x.deliveryLocation}}</h4><p class="order-meta">{{x.deliveryNo}} · 配送费 ¥{{x.fee}} · {{x.createdAt}}</p><div class="progress-line"><i :class="{done:x.status!=='WAITING'}"></i><i :class="{done:['PICKED_UP','DELIVERING','COMPLETED'].includes(x.status)}"></i><i :class="{done:['DELIVERING','COMPLETED'].includes(x.status)}"></i><i :class="{done:x.status==='COMPLETED'}"></i></div><div class="actions"><button v-if="!admin&&!publicView&&x.status==='WAITING'" @click="change(x,'CANCELLED')">取消订单</button><button v-if="!admin&&!publicView&&x.status==='WAITING'" class="primary" @click="change(x,'ACCEPTED')">接单</button><button v-if="!admin&&!publicView&&x.status==='ACCEPTED'" class="primary" @click="change(x,'PICKED_UP')">确认取件</button><button v-if="!admin&&!publicView&&x.status==='PICKED_UP'" class="primary" @click="change(x,'DELIVERING')">开始配送</button><button v-if="!admin&&!publicView&&x.status==='DELIVERING'" class="primary" @click="change(x,'COMPLETED')">完成配送</button></div></article></div><div v-if="!courierMode&&!rows.length&&!busy" class="empty"><div>⌁</div><h3>还没有配送订单</h3><p>选择上方服务类型，开始你的校园配送体验</p></div><Pager v-model:page="page" v-model:size="size" :total="total" :busy="busy"/></section></template>
+
+<template>
+  <section class="delivery-page">
+    <header class="delivery-head">
+      <div><span class="eyebrow">CAMPUS DELIVERY</span><h2>{{ admin ? '配送订单管理' : '校园配送' }}</h2><p>快递代拿、校园跑腿、小吃街外卖</p></div>
+      <button v-if="!publicView && !admin" class="primary" @click="showForm = !showForm">{{ showForm ? '收起表单' : '发布配送需求' }}</button>
+    </header>
+    <form v-if="showForm && !publicView && !admin" class="delivery-form" @submit.prevent="create">
+      <h3>发布配送需求</h3>
+      <div class="form-grid"><label>服务类型<select v-model="form.deliveryType"><option v-for="type in types.slice(1)" :key="type.key" :value="type.key">{{ type.label }}</option></select></label><label>取货地点<input v-model.trim="form.pickupLocation" maxlength="200" required placeholder="例如：东门快递站"></label><label>送达地点<input v-model.trim="form.deliveryLocation" maxlength="200" required placeholder="例如：3号宿舍楼下"></label></div>
+      <label>需求说明<textarea v-model.trim="form.requesterNote" maxlength="500" rows="2" placeholder="取件码、商品信息或其他说明"></textarea></label>
+      <div class="form-footer"><span>请勿在公开信息中填写取件码或联系方式，订单详情仅对参与者可见。</span><button class="primary" :disabled="busy">{{ busy ? '提交中…' : '确认发布' }}</button></div>
+    </form>
+    <section v-if="!publicView && !admin && showApplication" class="delivery-form courier-form">
+      <h3>配送员申请</h3>
+      <p v-if="courier.status === 'PENDING'">申请已提交，等待管理员审核。</p>
+      <p v-else-if="courier.status === 'REJECTED'">上次申请未通过：{{ courier.reviewNote || '请核对资料后重新申请。' }}</p>
+      <p v-if="courier.status !== 'PENDING' && courier.status !== 'APPROVED'">填写校园身份编号，管理员核对后即可接单。</p>
+      <form v-if="courier.status !== 'PENDING' && courier.status !== 'APPROVED'" class="form-grid" @submit.prevent="applyCourier"><label>校园身份编号<input v-model.trim="application.campusId" required minlength="4" maxlength="40" pattern="[A-Za-z0-9_-]+" placeholder="学号或校内工号"></label><label>申请说明<input v-model.trim="application.note" maxlength="500" placeholder="配送时段或校区"></label><button class="primary" :disabled="busy">提交申请</button></form>
+    </section>
+    <div class="delivery-toolbar">
+      <div v-if="!publicView && !admin" class="view-tabs"><button :class="{ active: view === 'orders' }" @click="switchView('orders')">我的订单</button><button :class="{ active: view === 'available' }" @click="switchView('available')">可接订单{{ courier.status === 'APPROVED' ? '' : ' · 待认证' }}</button><button v-if="courier.status !== 'APPROVED'" @click="showApplication = !showApplication">{{ courier.status === 'PENDING' ? '审核进度' : '申请配送员' }}</button></div>
+      <div v-else class="section-title"><h3>{{ admin ? '全部配送订单' : '公开配送动态' }}</h3><span>{{ total }} 条</span></div>
+      <div v-if="publicView || admin || view === 'available'" class="type-tabs"><button v-for="type in types" :key="type.key" :class="{ active: selectedType === type.key }" @click="switchType(type.key)">{{ type.label }}</button></div>
+      <button class="refresh" :disabled="loading" @click="load">刷新</button>
+    </div>
+    <p v-if="error" class="message error" role="alert">{{ error }}</p><p v-if="notice" class="message success" role="status">{{ notice }}</p>
+    <div v-if="loading" class="empty">正在加载配送订单…</div>
+    <div v-else-if="!records.length" class="empty"><span class="empty-icon">⌁</span><h3>{{ view === 'available' ? '暂时没有可接订单' : '暂无配送订单' }}</h3><p>{{ publicView ? '有新需求时，配送动态会显示在这里。' : view === 'available' ? '稍后刷新查看新的配送需求。' : '选择上方服务类型，发布你的第一笔配送需求。' }}</p><button v-if="!publicView && !admin && view === 'orders'" class="primary" @click="showForm = true">发布配送需求</button></div>
+    <div v-else class="order-list"><article v-for="order in records" :key="order.id" class="order-row"><div class="order-main"><div class="order-top"><strong>{{ typeName(order.deliveryType) }}</strong><span class="status" :data-status="order.status">{{ statusName(order.status) }}</span><small>#{{ order.id }}</small></div><p v-if="!publicView && order.pickupLocation && order.deliveryLocation" class="route"><span>{{ order.pickupLocation }}</span><b>→</b><span>{{ order.deliveryLocation }}</span></p><p v-if="order.requesterNote && !publicView && view !== 'available'" class="note">{{ order.requesterNote }}</p><p v-if="order.disputeReason && !publicView" class="note dispute">异常：{{ order.disputeReason }}<template v-if="order.resolutionNote"> · 处理：{{ order.resolutionNote }}</template></p><small class="meta">{{ order.createdAt || '' }}<template v-if="order.deliveryNo"> · {{ order.deliveryNo }}</template></small></div><div class="order-end"><strong v-if="order.fee != null">¥{{ Number(order.fee).toFixed(2) }}</strong><button v-for="action in actions(order)" :key="action.next" :disabled="busy" @click="change(order, action.next)">{{ action.label }}</button><button v-if="admin && order.status === 'DISPUTED'" :disabled="busy" @click="resolve(order, 'RESUME')">恢复配送</button><button v-if="admin && order.status === 'DISPUTED'" :disabled="busy" @click="resolve(order, 'CANCEL')">取消配送</button><button v-if="!admin && !publicView && view === 'orders' && ['ACCEPTED', 'PICKED_UP', 'DELIVERING'].includes(order.status)" :disabled="busy" @click="dispute(order)">报告异常</button></div></article></div>
+    <Pager v-model:page="page" v-model:size="size" :total="total" :busy="loading || busy" />
+  </section>
+</template>
+
 <style scoped>
-.available-panel{margin:20px 0;padding:24px;background:#fff;border:1px solid #dceae5;border-radius:14px}.available-panel article{display:flex;align-items:center;gap:18px;padding:16px 0;border-bottom:1px solid #edf3ef}.available-panel article p{flex:1;color:#718780}.available-panel button{padding:9px 14px;border-radius:6px;background:#28766e;color:#fff}.delivery-page{padding-bottom:30px}.delivery-create-bar{display:flex;gap:14px;align-items:center;margin:20px 0;padding:16px 20px;background:#fff;border:1px solid #dceae5;border-radius:14px}.delivery-create-bar span{flex:1;color:#82938e;font-size:12px}.create-panel{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:20px;margin:12px 0;background:#eff8f3;border-radius:12px}.create-panel select,.create-panel input,.create-panel button{padding:10px;border:1px solid #d5e5df;border-radius:6px}.create-panel button{background:#fff}.create-panel .primary{background:#28766e;color:#fff}@media(max-width:700px){.delivery-create-bar{display:block}.delivery-create-bar>*{margin:5px}.create-panel{grid-template-columns:1fr}}.delivery-hero{display:flex;justify-content:space-between;align-items:center;padding:38px 42px;border-radius:20px;background:linear-gradient(120deg,#174f50,#2e8074);color:#fff;margin-bottom:22px}.eyebrow{font-size:11px;letter-spacing:2px;opacity:.75}.delivery-hero h2{font-size:34px;line-height:1.25;margin:14px 0}.delivery-hero em{color:#cce9cf;font-style:normal}.delivery-hero p{opacity:.8}.hero-route{display:flex;align-items:center;gap:18px;padding:25px 30px;border:1px solid #ffffff40;border-radius:16px;background:#ffffff12}.hero-route b{font-size:30px;color:#d4edcf}.service-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.service-card{position:relative;overflow:hidden;display:flex;align-items:center;gap:16px;padding:24px 20px;background:linear-gradient(145deg,#fff 0%,#f5faf7 100%);border:1px solid #dceae5;border-radius:14px;text-align:left;color:#244b4a;transition:.2s}.service-card:before{content:"";position:absolute;inset:auto -25px -45px auto;width:120px;height:120px;border-radius:50%;background:#dcefe7;opacity:.55;transition:.35s}.service-card:hover:before,.service-card.active:before{transform:scale(1.7);opacity:.8}.service-card:hover,.service-card.active{transform:translateY(-6px);border-color:#2d8276;box-shadow:0 8px 20px #235e4b18}.service-art{position:relative;display:grid;place-items:center;width:84px;height:84px;flex:none;border-radius:24px;background:linear-gradient(145deg,#dff1e8,#a9d6c3);color:#1e6c61;font-size:38px;box-shadow:inset 0 0 0 8px #ffffff55,0 12px 20px #28766e22;transform:rotate(-5deg);transition:.35s}.service-art span{transform:rotate(5deg);position:relative;z-index:1}.service-art i{position:absolute;width:30px;height:30px;right:-5px;bottom:-4px;border-radius:50%;background:#fff;border:5px solid #d4eee2}.service-art.orange{background:linear-gradient(145deg,#fff0d7,#f4bf70);color:#a35d20}.service-art.blue{background:linear-gradient(145deg,#e0ecff,#91b9ed);color:#3467a2}.service-art.green{background:linear-gradient(145deg,#e0f5e7,#92d0a7);color:#2f8250}.service-card:hover .service-art{transform:rotate(0) scale(1.08)}.service-card i{display:grid;place-items:center;width:54px;height:54px;flex:none;position:relative;z-index:1;border-radius:12px;background:#eaf5ef;font-style:normal;font-size:22px}.service-card div{flex:1;position:relative;z-index:1}.service-index{display:block;color:#8db4a8;font-size:10px;letter-spacing:2px;margin-bottom:4px}.service-card b{display:block;font-size:20px;letter-spacing:1px;white-space:nowrap}.service-card small:not(.service-index){line-height:1.5}.service-card small{display:block;margin-top:5px;color:#82938e;font-size:11px}.service-card>span{position:relative;z-index:1;font-size:30px;color:#73a295;transition:transform .25s}.service-card:hover>span{transform:translateX(5px)}.service-card:nth-child(1){animation-delay:.05s}.service-card:nth-child(2){animation-delay:.12s}.service-card:nth-child(3){animation-delay:.19s}.service-card{animation:delivery-card-in .55s cubic-bezier(.2,.75,.3,1) both}@keyframes delivery-card-in{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}@media(prefers-reduced-motion:reduce){.service-card{animation:none;transition:none}}.delivery-toolbar{display:flex;justify-content:space-between;align-items:end;margin:28px 0 12px}.delivery-toolbar h3{margin:0;color:#244b4a}.delivery-toolbar p{margin:6px 0;color:#8a9b96;font-size:12px}.stats{display:flex;gap:20px}.stats span{font-size:11px;color:#81938d}.stats b{font-size:22px;color:#28766e;margin-right:5px}.filter-row{display:flex;gap:8px;margin-bottom:14px}.filter-row button,.actions button{padding:8px 13px;border:1px solid #dbe9e4;border-radius:6px;background:#fff;color:#52736c}.filter-row button.active,.actions button.primary{background:#28766e;color:#fff;border-color:#28766e}.delivery-list{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.delivery-card{padding:20px;background:#fff;border:1px solid #dceae5;border-radius:14px}.card-top{display:flex;justify-content:space-between}.type-pill{padding:5px 9px;border-radius:5px;background:#eaf5ef;color:#28766e;font-size:11px}.card-top>b{font-size:12px;color:#28766e}.delivery-card h4{font-size:17px;color:#244b4a;margin:18px 0}.delivery-card h4 span{color:#9aaea8;margin:0 8px}.order-meta{color:#8a9b96;font-size:11px}.progress-line{display:flex;gap:4px;margin:18px 0}.progress-line i{height:4px;flex:1;background:#e3ece8;border-radius:4px}.progress-line i.done{background:#55a48b}.actions{text-align:right}.actions button{margin-left:6px}.empty{text-align:center;padding:55px 20px;color:#80928c}.empty>div{font-size:42px;color:#70a99b}.empty h3{color:#41665f}@media(max-width:800px){.delivery-hero{padding:28px;display:block}.hero-route{margin-top:20px}.service-grid,.delivery-list{grid-template-columns:1fr}.delivery-toolbar{display:block}.stats{margin-top:14px}}
+.delivery-page{color:#183c3b}.delivery-head{display:flex;align-items:end;justify-content:space-between;gap:20px;padding:32px 36px;background:#174c4a;color:#fff;border-radius:8px}.delivery-head>div{display:flex;flex-direction:column;align-items:flex-start}.eyebrow{font-size:11px;letter-spacing:2px;color:#a9ddd0}.delivery-head h2{font-size:30px;margin:8px 0}.delivery-head p{margin:0;color:#cee0d9}.delivery-head .primary{background:#dcf2e7;color:#174c4a}.primary{border:0;border-radius:6px;background:#246d64;color:#fff;padding:11px 18px;font-weight:700;cursor:pointer;white-space:nowrap}.delivery-form{margin:20px 0;padding:24px;border:1px solid #d4e3de;border-radius:8px;background:#fff}.delivery-form h3{margin:0 0 18px}.form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.delivery-form label{display:block;font-size:13px;font-weight:700;color:#365b58}.delivery-form input,.delivery-form select,.delivery-form textarea{display:block;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:11px;border:1px solid #cbdcd6;border-radius:6px;font:inherit;color:#183c3b;background:#fff}.form-footer{display:flex;justify-content:space-between;align-items:center;gap:20px}.form-footer span{font-size:12px;color:#748b89}.delivery-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:24px 0 14px;border-bottom:1px solid #d9e5e1}.view-tabs,.type-tabs{display:flex;gap:6px;flex-wrap:wrap}.delivery-toolbar button,.order-end button{border:1px solid #d3e3dd;border-radius:6px;background:#fff;color:#275651;padding:9px 13px;cursor:pointer}.delivery-toolbar button.active,.order-end button{background:#246d64;color:#fff;border-color:#246d64}.delivery-toolbar .refresh{margin-left:auto}.section-title{display:flex;align-items:baseline;gap:12px;margin-right:auto}.section-title h3{margin:0}.section-title span{color:#78908d}.message{padding:11px 14px;border-radius:6px}.error{background:#fff1ef;color:#a62b25}.success{background:#e7f4ed;color:#246d64}.empty{text-align:center;padding:58px 16px;color:#718a87}.empty h3{color:#214e4b;margin:6px 0}.empty-icon{font-size:36px;color:#6aa49b}.order-list{background:#fff}.order-row{display:flex;justify-content:space-between;gap:20px;padding:20px 4px;border-bottom:1px solid #e2ece8}.order-main{min-width:0}.order-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.order-top strong{font-size:17px}.order-top small,.meta{color:#849a97}.status{border-radius:4px;padding:4px 8px;background:#ecf4f1;color:#246d64;font-size:12px}.status[data-status="CANCELLED"]{background:#f5eeee;color:#9b5d56}.status[data-status="COMPLETED"]{background:#e6f4ea;color:#287649}.route{display:flex;align-items:center;gap:12px;margin:14px 0 8px;flex-wrap:wrap}.route b{color:#489b8b}.note{color:#607b77;margin:8px 0}.order-end{display:flex;align-items:center;gap:12px;white-space:nowrap}.order-end strong{font-size:18px}.order-end button:disabled,.delivery-toolbar button:disabled,.primary:disabled{opacity:.5;cursor:default}@media(max-width:700px){.delivery-head{padding:24px;align-items:start;flex-direction:column}.delivery-head h2{font-size:25px}.form-grid{grid-template-columns:1fr}.form-footer,.order-row{align-items:start;flex-direction:column}.order-end{width:100%;justify-content:space-between}.delivery-toolbar .refresh{margin-left:0}}
 </style>
