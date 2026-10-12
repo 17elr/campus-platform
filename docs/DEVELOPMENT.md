@@ -41,7 +41,7 @@ npm ci
 npm run build
 ```
 
-生成 backend/target 与 notice-service/target 中的 jar，以及 frontend/dist。当前没有 Java 单元测试目录，Maven test 主要验证编译和生命周期执行，不能替代真实数据库验收。
+生成 backend/target 与 notice-service/target 中的 jar，以及 frontend/dist。backend 现有 5 项核心 Java 单元测试，验证账号与令牌安全、佣金舍入和封顶；Maven test 不连接真实数据库，不能替代业务集成验收。
 
 | 检查脚本 | 前提与覆盖范围 |
 | --- | --- |
