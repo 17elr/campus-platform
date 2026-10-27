@@ -18,14 +18,28 @@ flowchart LR
     Q -. 消费日志 .-> DB
 ```
 
-### 演示截图
+### 当前界面预览
 
-![本地测试数据下的校园信息大厅与推广分页](docs/images/hall.png)
+截图于 2026-10-27，来自当前前端代码；接口使用回归测试数据。
 
-![本地演示账号的留言与回复页面](docs/images/comments.png)
+![当前用户首页](docs/images/home.png)
 
-[截图来源及历史版本说明](docs/images/SOURCES.md)。页面数字属于演示和回归数据。
+![当前校园信息大厅](docs/images/hall.png)
 
+<details>
+<summary>查看寻物、招领、二手闲置及管理后台</summary>
+
+![寻物启事](docs/images/lost.png)
+
+![失物招领](docs/images/found.png)
+
+![二手闲置](docs/images/second_hand.png)
+
+![管理员用户与账号管理](docs/images/admin.png)
+
+</details>
+
+[截图来源与验证范围](docs/images/SOURCES.md)。页面数字属于测试数据。
 
 **连接校园里的失物、闲置与生活服务**
 
