@@ -2,6 +2,31 @@
 
 # Campus Platform · 校园互助平台
 
+## 项目证据与个人贡献
+
+[负责模块与关键技术决策](docs/PORTFOLIO.md) · [当前架构说明](docs/architecture-overview.md) · [持续集成](.github/workflows/ci.yml)
+
+```mermaid
+flowchart LR
+    U[Vue 3 用户端 / 管理后台] --> B[Spring Boot REST API / JWT]
+    B --> S[交易 / 推广 / 配送业务]
+    S --> DB[(MySQL / MyBatis-Plus / JDBC)]
+    B --> R[(Redis 公告缓存 / TTL 5 分钟)]
+    B -->|缓存未命中 / OpenFeign| N[独立公告服务]
+    N --> DB
+    S -. 可选配送操作日志 .-> Q[RabbitMQ]
+    Q -. 消费日志 .-> DB
+```
+
+### 演示截图
+
+![本地测试数据下的校园信息大厅与推广分页](docs/images/hall.png)
+
+![本地演示账号的留言与回复页面](docs/images/comments.png)
+
+[截图来源及历史版本说明](docs/images/SOURCES.md)。页面数字属于演示和回归数据。
+
+
 **连接校园里的失物、闲置与生活服务**
 
 ![Java](https://img.shields.io/badge/Java-17-orange)
@@ -146,7 +171,7 @@ npm ci
 npm run build
 ```
 
-Maven 命令成功不等同于真实业务验收；当前没有 Java 自动化测试用例。浏览器及基础设施检查的依赖和执行方式见开发指南。提交修改时请同步接口文档；数据库变更新增编号迁移，避免修改已部署的迁移文件。欢迎通过 Issues 反馈问题、通过 Pull Request 提交改进。
+Maven 命令成功不等同于真实业务验收；新增 5 项核心 Java 单元测试，覆盖账号安全、令牌失效与佣金金额边界；不等同于数据库或中间件集成验收。浏览器及基础设施检查的依赖和执行方式见开发指南。提交修改时请同步接口文档；数据库变更新增编号迁移，避免修改已部署的迁移文件。欢迎通过 Issues 反馈问题、通过 Pull Request 提交改进。
 
 ## 当前边界
 
