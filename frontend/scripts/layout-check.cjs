@@ -1,2 +1,52 @@
-const {chromium}=require('C:/Users/17elr/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
-(async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});const page=await browser.newPage();await page.route('**/api/**',r=>{const u=r.request().url();let data=[];if(u.endsWith('/auth/me'))data={id:1,username:'admin',nickname:'管理员',role:'ADMIN'};if(u.endsWith('/stats'))data={users:6,items:3,approved:1,pending:2};r.fulfill({contentType:'application/json',body:JSON.stringify({code:200,data})})});await page.addInitScript(()=>localStorage.setItem('campus_token','layout-test'));for(const width of [1920,1366,768,390]){await page.setViewportSize({width,height:1000});await page.goto('http://127.0.0.1:5173');for(const route of ['home','hall','account','admin']){await page.evaluate(r=>location.hash=r,route);await page.waitForTimeout(150);const sizes=await page.evaluate(()=>{const m=document.querySelector('main'),p=m.parentElement,s=getComputedStyle(p);return{main:m.getBoundingClientRect().width,columns:s.gridTemplateColumns,overflow:document.documentElement.scrollWidth>innerWidth+1}});if(sizes.overflow)throw Error(JSON.stringify({width,route,...sizes}));console.log(width,route,JSON.stringify(sizes))}if(width===1920){await page.evaluate(()=>location.hash='hall');await page.waitForTimeout(100);await page.screenshot({path:'test-results/layout-hall.png'})}}await browser.close()})().catch(e=>{console.error(e);process.exit(1)});
+const {
+  chromium,
+} = require("C:/Users/17elr/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright");
+(async () => {
+  const browser = await chromium.launch({ channel: "msedge", headless: true });
+  const page = await browser.newPage();
+  await page.route("**/api/**", (r) => {
+    const u = r.request().url();
+    let data = [];
+    if (u.endsWith("/auth/me"))
+      data = { id: 1, username: "admin", nickname: "管理员", role: "ADMIN" };
+    if (u.endsWith("/stats"))
+      data = { users: 6, items: 3, approved: 1, pending: 2 };
+    r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ code: 200, data }),
+    });
+  });
+  await page.addInitScript(() =>
+    localStorage.setItem("campus_token", "layout-test"),
+  );
+  for (const width of [1920, 1366, 768, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("http://127.0.0.1:5173");
+    for (const route of ["home", "hall", "account", "admin"]) {
+      await page.evaluate((r) => (location.hash = r), route);
+      await page.waitForTimeout(150);
+      const sizes = await page.evaluate(() => {
+        const m = document.querySelector("main"),
+          p = m.parentElement,
+          s = getComputedStyle(p);
+        return {
+          main: m.getBoundingClientRect().width,
+          columns: s.gridTemplateColumns,
+          overflow: document.documentElement.scrollWidth > innerWidth + 1,
+        };
+      });
+      if (sizes.overflow)
+        throw Error(JSON.stringify({ width, route, ...sizes }));
+      console.log(width, route, JSON.stringify(sizes));
+    }
+    if (width === 1920) {
+      await page.evaluate(() => (location.hash = "hall"));
+      await page.waitForTimeout(100);
+      await page.screenshot({ path: "test-results/layout-hall.png" });
+    }
+  }
+  await browser.close();
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

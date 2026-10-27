@@ -29,4 +29,4 @@
 
 011_delivery_fulfillment.sql 增加配送员申请及纠纷字段。使用旧数据库时需先迁移。支付未接入真实网关；费用字段和状态变化不代表真实资金结算。
 
-启用 CAMPUS_MQ_ENABLED 后，相关配送操作通过 RabbitMQ 异步写入 operation_log；关闭时跳过，订单主流程不依赖消息队列。
+启用 CAMPUS_MQ_ENABLED 后，相关配送操作先和订单变更一起写入 operation_log_outbox，再由 RabbitMQ 异步写入 operation_log；消息带 event_id，重复投递不会重复产生日志。RabbitMQ 暂时不可用时业务状态仍可提交，管理员可在操作日志页查看待同步数量。

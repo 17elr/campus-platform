@@ -1,4 +1,70 @@
-CREATE TABLE IF NOT EXISTS commission_rule (id BIGINT PRIMARY KEY AUTO_INCREMENT,min_amount DECIMAL(10,2) NOT NULL,max_amount DECIMAL(10,2) NULL,rate DECIMAL(6,5) NOT NULL,max_fee DECIMAL(10,2) NOT NULL,status TINYINT NOT NULL DEFAULT 1,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,created_by BIGINT NULL,INDEX idx_commission_active(status,min_amount));
-ALTER TABLE trade_order ADD COLUMN commission_rule_id BIGINT NULL;
-CREATE TABLE IF NOT EXISTS commission_rule_history (id BIGINT PRIMARY KEY AUTO_INCREMENT,rule_id BIGINT NULL,action VARCHAR(20) NOT NULL,min_amount DECIMAL(10,2),max_amount DECIMAL(10,2),rate DECIMAL(6,5),max_fee DECIMAL(10,2),created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,created_by BIGINT NULL);
-INSERT INTO commission_rule(min_amount,max_amount,rate,max_fee,status) SELECT * FROM (SELECT 0.00,50.00,0.02000,10.00,1 UNION ALL SELECT 50.00,200.00,0.03000,15.00,1 UNION ALL SELECT 200.00,500.00,0.04000,20.00,1 UNION ALL SELECT 500.00,NULL,0.05000,30.00,1) x WHERE NOT EXISTS (SELECT 1 FROM commission_rule LIMIT 1);
+CREATE TABLE IF NOT EXISTS commission_rule (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  min_amount DECIMAL(10, 2) NOT NULL,
+  max_amount DECIMAL(10, 2) NULL,
+  rate DECIMAL(6, 5) NOT NULL,
+  max_fee DECIMAL(10, 2) NOT NULL,
+  status TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT NULL,
+  INDEX idx_commission_active (status, min_amount)
+);
+
+ALTER TABLE trade_order
+ADD COLUMN commission_rule_id BIGINT NULL;
+
+CREATE TABLE IF NOT EXISTS commission_rule_history (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  rule_id BIGINT NULL,
+  action VARCHAR(20) NOT NULL,
+  min_amount DECIMAL(10, 2),
+  max_amount DECIMAL(10, 2),
+  rate DECIMAL(6, 5),
+  max_fee DECIMAL(10, 2),
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT NULL
+);
+
+INSERT INTO
+  commission_rule (min_amount, max_amount, rate, max_fee, status)
+SELECT
+  *
+FROM
+  (
+    SELECT
+      0.00,
+      50.00,
+      0.02000,
+      10.00,
+      1
+    UNION ALL
+    SELECT
+      50.00,
+      200.00,
+      0.03000,
+      15.00,
+      1
+    UNION ALL
+    SELECT
+      200.00,
+      500.00,
+      0.04000,
+      20.00,
+      1
+    UNION ALL
+    SELECT
+      500.00,
+      NULL,
+      0.05000,
+      30.00,
+      1
+  ) x
+WHERE
+  NOT EXISTS (
+    SELECT
+      1
+    FROM
+      commission_rule
+    LIMIT
+      1
+  );

@@ -1,2 +1,70 @@
-package com.campus.controller; import com.campus.common.Result; import com.campus.entity.User; import com.campus.service.UserService; import com.campus.mapper.UserMapper; import com.campus.security.Tokens; import org.springframework.web.bind.annotation.*; import jakarta.validation.Valid;
-@RestController @RequestMapping("/api/users") public class UserController {private final UserService service; private final UserMapper users; private final Tokens tokens; public UserController(UserService s,UserMapper u,Tokens t){service=s;users=u;tokens=t;} private User me(String h){if(h==null||!h.startsWith("Bearer "))throw new IllegalArgumentException("请先登录");return users.selectById(tokens.verify(h.substring(7)));} @GetMapping public Result<?> list(){return Result.ok(service.list());} @PutMapping("/profile") public Result<?> profile(@RequestHeader("Authorization") String h,@RequestBody User input){User u=me(h);if(input.getNickname()==null||input.getNickname().isBlank()||input.getNickname().length()>50)return Result.fail("昵称不能为空且不超过50字");if(input.getBio()!=null&&input.getBio().length()>500)return Result.fail("简介不超过500字");u.setNickname(input.getNickname().trim());u.setBio(input.getBio()==null?null:input.getBio().trim());u.setAvatarUrl(input.getAvatarUrl());users.updateById(u);u.setPassword(null);return Result.ok(u);} @PutMapping("/{id}/status") public Result<?> status(@PathVariable Long id,@RequestParam Integer value){User u=service.list().stream().filter(x->x.getId().equals(id)).findFirst().orElseThrow();u.setStatus(value);return Result.ok(u);} }
+package com.campus.controller;
+
+import com.campus.common.Result;
+import com.campus.entity.User;
+import com.campus.mapper.UserMapper;
+import com.campus.security.Tokens;
+import com.campus.service.UserService;
+import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+
+  private final UserService service;
+  private final UserMapper users;
+  private final Tokens tokens;
+
+  public UserController(UserService s, UserMapper u, Tokens t) {
+    service = s;
+    users = u;
+    tokens = t;
+  }
+
+  private User me(String h) {
+    if (
+      h == null || !h.startsWith("Bearer ")
+    ) throw new IllegalArgumentException("请先登录");
+    return users.selectById(tokens.verify(h.substring(7)));
+  }
+
+  @GetMapping
+  public Result<?> list() {
+    return Result.ok(service.list());
+  }
+
+  @PutMapping("/profile")
+  public Result<?> profile(
+    @RequestHeader("Authorization") String h,
+    @RequestBody User input
+  ) {
+    User u = me(h);
+    if (
+      input.getNickname() == null ||
+      input.getNickname().isBlank() ||
+      input.getNickname().length() > 50
+    ) return Result.fail("昵称不能为空且不超过50字");
+    if (
+      input.getBio() != null && input.getBio().length() > 500
+    ) return Result.fail("简介不超过500字");
+    u.setNickname(input.getNickname().trim());
+    u.setBio(input.getBio() == null ? null : input.getBio().trim());
+    u.setAvatarUrl(input.getAvatarUrl());
+    users.updateById(u);
+    u.setPassword(null);
+    return Result.ok(u);
+  }
+
+  @PutMapping("/{id}/status")
+  public Result<?> status(@PathVariable Long id, @RequestParam Integer value) {
+    User u = service
+      .list()
+      .stream()
+      .filter(x -> x.getId().equals(id))
+      .findFirst()
+      .orElseThrow();
+    u.setStatus(value);
+    return Result.ok(u);
+  }
+}

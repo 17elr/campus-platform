@@ -1,6 +1,8 @@
 server:
   port: 8080
 spring:
+  application:
+    name: campus-service
   servlet:
     multipart:
       max-file-size: 5MB
@@ -20,13 +22,21 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    connection-timeout: 2s
+    publisher-confirm-type: correlated
+    publisher-returns: true
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
-notice:
-  service:
-    url: ${NOTICE_SERVICE_URL:http://localhost:8081}
 campus:
   mq:
     enabled: ${CAMPUS_MQ_ENABLED:false}
+    publish-delay-ms: ${CAMPUS_MQ_PUBLISH_DELAY_MS:5000}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true

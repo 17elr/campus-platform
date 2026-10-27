@@ -1,10 +1,126 @@
 package com.campus.controller;
-import com.campus.common.Result; import com.campus.dto.OrderDTO; import com.campus.entity.*; import com.campus.mapper.*; import com.campus.security.Tokens; import jakarta.validation.Valid; import org.springframework.web.bind.annotation.*; import java.math.BigDecimal; import java.time.LocalDateTime; import java.util.*;
-@RestController @RequestMapping("/api/trade") public class TradeController { private final TradeOrderMapper orders; private final ItemMapper items; private final UserMapper users; private final Tokens tokens; private final com.campus.service.CommissionService commissions; public TradeController(TradeOrderMapper o,ItemMapper i,UserMapper u,Tokens t,com.campus.service.CommissionService c){orders=o;items=i;users=u;tokens=t;commissions=c;}
- private User me(String h){if(h==null||!h.startsWith("Bearer "))throw new IllegalArgumentException("请先登录");return users.selectById(tokens.verify(h.substring(7)));}
- @PostMapping("/orders") public Result<?> create(@Valid @RequestBody OrderDTO q,@RequestHeader("Authorization") String h){User buyer=me(h);Item p=items.selectById(q.productId());if(p==null||!"SECOND_HAND".equals(p.getType())||p.getUserId().equals(buyer.getId()))return Result.fail("商品不存在"); if(q.amount().signum()<=0||q.amount().compareTo(new BigDecimal("100000"))>0)return Result.fail("金额无效"); var rule=commissions.resolve(q.amount()); BigDecimal fee=commissions.fee(q.amount(),rule);TradeOrder o=new TradeOrder();o.setOrderNo("CAMPUS"+System.currentTimeMillis());o.setProductId(p.getId());o.setBuyerId(buyer.getId());o.setSellerId(p.getUserId());o.setAmount(q.amount());o.setCommission(fee);o.setCommissionRuleId(rule.id());o.setSellerAmount(q.amount().subtract(fee));o.setPaymentMethod(q.paymentMethod());o.setStatus("PENDING_PAYMENT");o.setCreatedAt(LocalDateTime.now());orders.insert(o);return Result.ok(o);}
- @PostMapping("/orders/{id}/pay") public Result<?> pay(@PathVariable Long id,@RequestHeader("Authorization") String h){User u=me(h);TradeOrder o=orders.selectById(id);if(o==null||!u.getId().equals(o.getBuyerId()))return Result.fail("订单不存在");o.setStatus("PAID");o.setPaidAt(LocalDateTime.now());orders.updateById(o);return Result.ok(o);}
- @GetMapping("/orders") public Result<?> list(@RequestParam(defaultValue="1") int page,@RequestParam(defaultValue="10") int size,@RequestParam(defaultValue="all") String role,@RequestHeader("Authorization") String h){User u=me(h);var p=new com.campus.common.Paging(page,size);var w=new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<TradeOrder>();
- if("buy".equals(role))w.eq("buyer_id",u.getId());else if("sell".equals(role))w.eq("seller_id",u.getId());else if("all".equals(role))w.and(x->x.eq("buyer_id",u.getId()).or().eq("seller_id",u.getId()));else return Result.fail("订单角色无效");
- long total=orders.selectCount(w);return Result.ok(Map.of("records",orders.selectList(w.orderByDesc("created_at","id").last(p.limit())),"total",total,"page",p.page(),"size",p.size()));}
+
+import com.campus.common.Result;
+import com.campus.dto.OrderDTO;
+import com.campus.entity.*;
+import com.campus.mapper.*;
+import com.campus.security.Tokens;
+import jakarta.validation.Valid;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.*;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/trade")
+public class TradeController {
+
+  private final TradeOrderMapper orders;
+  private final ItemMapper items;
+  private final UserMapper users;
+  private final Tokens tokens;
+  private final com.campus.service.CommissionService commissions;
+
+  public TradeController(
+    TradeOrderMapper o,
+    ItemMapper i,
+    UserMapper u,
+    Tokens t,
+    com.campus.service.CommissionService c
+  ) {
+    orders = o;
+    items = i;
+    users = u;
+    tokens = t;
+    commissions = c;
+  }
+
+  private User me(String h) {
+    if (
+      h == null || !h.startsWith("Bearer ")
+    ) throw new IllegalArgumentException("请先登录");
+    return users.selectById(tokens.verify(h.substring(7)));
+  }
+
+  @PostMapping("/orders")
+  public Result<?> create(
+    @Valid @RequestBody OrderDTO q,
+    @RequestHeader("Authorization") String h
+  ) {
+    User buyer = me(h);
+    Item p = items.selectById(q.productId());
+    if (
+      p == null ||
+      !"SECOND_HAND".equals(p.getType()) ||
+      p.getUserId().equals(buyer.getId())
+    ) return Result.fail("商品不存在");
+    if (
+      q.amount().signum() <= 0 ||
+      q.amount().compareTo(new BigDecimal("100000")) > 0
+    ) return Result.fail("金额无效");
+    var rule = commissions.resolve(q.amount());
+    BigDecimal fee = commissions.fee(q.amount(), rule);
+    TradeOrder o = new TradeOrder();
+    o.setOrderNo("CAMPUS" + System.currentTimeMillis());
+    o.setProductId(p.getId());
+    o.setBuyerId(buyer.getId());
+    o.setSellerId(p.getUserId());
+    o.setAmount(q.amount());
+    o.setCommission(fee);
+    o.setCommissionRuleId(rule.id());
+    o.setSellerAmount(q.amount().subtract(fee));
+    o.setPaymentMethod(q.paymentMethod());
+    o.setStatus("PENDING_PAYMENT");
+    o.setCreatedAt(LocalDateTime.now());
+    orders.insert(o);
+    return Result.ok(o);
+  }
+
+  @PostMapping("/orders/{id}/pay")
+  public Result<?> pay(
+    @PathVariable Long id,
+    @RequestHeader("Authorization") String h
+  ) {
+    User u = me(h);
+    TradeOrder o = orders.selectById(id);
+    if (o == null || !u.getId().equals(o.getBuyerId())) return Result.fail(
+      "订单不存在"
+    );
+    o.setStatus("PAID");
+    o.setPaidAt(LocalDateTime.now());
+    orders.updateById(o);
+    return Result.ok(o);
+  }
+
+  @GetMapping("/orders")
+  public Result<?> list(
+    @RequestParam(defaultValue = "1") int page,
+    @RequestParam(defaultValue = "10") int size,
+    @RequestParam(defaultValue = "all") String role,
+    @RequestHeader("Authorization") String h
+  ) {
+    User u = me(h);
+    var p = new com.campus.common.Paging(page, size);
+    var w =
+      new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<TradeOrder>();
+    if ("buy".equals(role)) w.eq("buyer_id", u.getId());
+    else if ("sell".equals(role)) w.eq("seller_id", u.getId());
+    else if ("all".equals(role)) w.and(x ->
+      x.eq("buyer_id", u.getId()).or().eq("seller_id", u.getId())
+    );
+    else return Result.fail("订单角色无效");
+    long total = orders.selectCount(w);
+    return Result.ok(
+      Map.of(
+        "records",
+        orders.selectList(w.orderByDesc("created_at", "id").last(p.limit())),
+        "total",
+        total,
+        "page",
+        p.page(),
+        "size",
+        p.size()
+      )
+    );
+  }
 }

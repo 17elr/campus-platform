@@ -6,7 +6,7 @@
 
 ![Java](https://img.shields.io/badge/Java-17-orange)
 ![Vue](https://img.shields.io/badge/Vue-3-42b883)
-![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.3.2-6db33f)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.3.13-6db33f)
 ![Status](https://img.shields.io/badge/status-active_development-blue)
 
 [快速启动](#快速启动) · [技术栈](docs/TECH_STACK.md) · [开发部署](docs/DEVELOPMENT.md) · [接口文档](docs/API.md) · [更新记录](CHANGELOG.md)
@@ -38,11 +38,12 @@
 | 前端 | Vue `^3.5.13`、JavaScript、CSS | 组件与页面交互 |
 | 构建 | Vite `^5.4.11`、plugin-vue `^5.2.1` | 开发服务与静态构建 |
 | HTTP | Axios `^1.7.9`、Fetch API | 浏览器请求 |
-| 后端 | Java 17、Spring Boot 3.3.2 | REST API、依赖注入、配置 |
+| 后端 | Java 17、Spring Boot 3.3.13 | REST API、依赖注入、配置 |
 | 服务调用 | Spring Cloud BOM 2023.0.6、OpenFeign | 主服务调用公告服务 |
+| 服务治理 | Eureka、Spring Cloud Gateway、LoadBalancer（Cloud BOM 管理） | 注册发现、统一 API 入口、按服务名转发 |
 | 持久化 | MyBatis-Plus 3.5.7、JdbcTemplate、MySQL | 实体 CRUD 与业务 SQL |
 | 缓存 | Spring Cache、Spring Data Redis | 公告缓存，TTL 5 分钟 |
-| 消息 | Spring AMQP、RabbitMQ | 可选的异步配送操作日志 |
+| 消息 | Spring AMQP、RabbitMQ | 配送操作日志异步投递；数据库 outbox 负责失败重试与幂等消费 |
 | 认证 | JJWT 0.12.6、PBKDF2-HMAC-SHA256 | JWT 与密码加盐哈希 |
 | 工具 | Maven、npm、Lombok 1.18.36、Playwright 脚本 | 构建、代码生成与回归检查 |
 
@@ -52,7 +53,11 @@
 
 ```mermaid
 flowchart LR
-    U[浏览器 Vue] --> B[主服务 :8080]
+    U[浏览器 Vue] --> G[Gateway :8088]
+    G -->|服务发现| B[主服务 :8080]
+    G -. 注册与发现 .-> E[Eureka :8761]
+    B -. 注册与发现 .-> E
+    N -. 注册 .-> E
     B --> DB[(MySQL)]
     B --> R[(Redis 公告缓存)]
     B -->|OpenFeign 缓存未命中| N[公告服务 :8081]
@@ -72,7 +77,11 @@ flowchart LR
 $env:DB_PASSWORD = "你的数据库密码"
 ```
 
-3. 启动 Redis，再在独立终端分别启动两个服务：
+3. 启动 Redis，再在独立终端按顺序启动注册中心、公告服务、主服务和网关：
+
+```powershell
+mvn -f registry-service/pom.xml spring-boot:run
+```
 
 ```powershell
 mvn -f notice-service/pom.xml spring-boot:run
@@ -81,6 +90,12 @@ mvn -f notice-service/pom.xml spring-boot:run
 ```powershell
 mvn -f backend/pom.xml spring-boot:run
 ```
+
+```powershell
+mvn -f gateway-service/pom.xml spring-boot:run
+```
+
+等待 http://localhost:8761 中 CAMPUS-SERVICE、NOTICE-SERVICE、GATEWAY-SERVICE 显示 UP；首次注册和发现可能需要约 90 秒。
 
 4. 启动前端：
 
@@ -92,13 +107,17 @@ npm run dev
 
 访问 `http://localhost:5173`。演示管理员为 `admin / admin123`，仅用于本地演示。
 
-默认 API 地址为 `http://127.0.0.1:8080/api`。环境变量、生产构建、跨域配置和迁移注意事项见 [开发部署指南](docs/DEVELOPMENT.md)。
+默认 API 地址为 `http://127.0.0.1:8088/api`。环境变量、生产构建、跨域配置和迁移注意事项见 [开发部署指南](docs/DEVELOPMENT.md)。
 
 ## 仓库目录
 
 ```text
+registry-service/ Eureka 注册中心（8761）
+gateway-service/  Spring Cloud Gateway（8088）
 backend/          主服务、数据库初始化和增量迁移
 notice-service/   独立公告服务
+gateway-service/  统一 API 网关
+registry-service/ Eureka 注册中心
 frontend/         Vue 页面、组件和浏览器检查脚本
 scripts/          Feign/Redis 联通检查
 docs/             技术栈、接口、开发部署及业务说明
@@ -120,6 +139,8 @@ CHANGELOG.md      版本与更新摘要
 ```powershell
 mvn -f backend/pom.xml test
 mvn -f notice-service/pom.xml test
+mvn -f gateway-service/pom.xml test
+mvn -f registry-service/pom.xml test
 cd frontend
 npm ci
 npm run build
@@ -129,6 +150,6 @@ Maven 命令成功不等同于真实业务验收；当前没有 Java 自动化�
 
 ## 当前边界
 
-支付未接入真实网关；JWT 密钥和撤销列表在进程内，重启后需重新登录；图片存储在本地 `uploads`；Redis/公告服务不可用时没有自动降级。RabbitMQ 日志发送失败会记录警告，不保证审计事件必达。
+支付未接入真实网关；JWT 密钥和撤销列表在进程内，重启后需重新登录；图片存储在本地 `uploads`；Redis/公告服务不可用时没有自动降级。配送日志使用数据库 outbox 重试投递，消费者按 event_id 幂等写入；需要启用 MQ，并监控待投递事件。
 
 未指定开源许可证，默认保留所有权利。
